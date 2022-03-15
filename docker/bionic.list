@@ -1,0 +1,2 @@
+deb http://security.ubuntu.com/ubuntu/ bionic-security main
+deb http://archive.ubuntu.com/ubuntu/ bionic main universe

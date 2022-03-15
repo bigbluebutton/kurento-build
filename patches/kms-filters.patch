@@ -1,0 +1,101 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index af96628..bdf856b 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -52,7 +52,7 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -DHAVE_CONFIG_H")
+
+ set(GST_REQUIRED ^1.5.0)
+ set(GLIB_REQUIRED ^2.38)
+-set(OPENCV_REQUIRED <4.0.0)
++set(OPENCV_REQUIRED ^4.0.0)
+ set(LIBSOUP_REQUIRED ^2.40)
+
+ include(GenericFind)
+@@ -60,7 +60,7 @@ generic_find(LIBNAME gstreamer-1.5 VERSION ${GST_REQUIRED} REQUIRED)
+ generic_find(LIBNAME gstreamer-base-1.5 VERSION ${GST_REQUIRED} REQUIRED)
+ generic_find(LIBNAME gstreamer-video-1.5 VERSION ${GST_REQUIRED} REQUIRED)
+ generic_find(LIBNAME gstreamer-check-1.5 VERSION ${GST_REQUIRED})
+-generic_find(LIBNAME opencv VERSION ${OPENCV_REQUIRED} REQUIRED)
++generic_find(LIBNAME OpenCV VERSION ${OPENCV_REQUIRED} REQUIRED)
+ generic_find(LIBNAME libsoup-2.4 VERSION ${LIBSOUP_REQUIRED} REQUIRED)
+
+ set(CMAKE_INSTALL_GST_PLUGINS_DIR ${CMAKE_INSTALL_LIBDIR}/gstreamer-1.5)
+diff --git a/debian/control b/debian/control
+index 4f818a8..67a54a2 100644
+--- a/debian/control
++++ b/debian/control
+@@ -10,8 +10,8 @@ Build-Depends: debhelper (>= 9),
+  kms-core-dev (>= 6.16.0),
+  kms-elements-dev (>= 6.16.0),
+  kurento-module-creator (>= 6.16.0),
+- libboost-filesystem-dev,
+- libboost-system-dev,
++ libboost-filesystem1.65-dev,
++ libboost-system1.65-dev,
+  libglibmm-2.4-dev,
+  libgstreamer-plugins-base1.5-dev,
+  libopencv-dev,
+@@ -41,8 +41,8 @@ Depends: kms-filters (= ${binary:Version}),
+  kms-core-dev (>= 6.16.0),
+  kms-elements-dev (>= 6.16.0),
+  kurento-module-creator (>= 6.16.0),
+- libboost-filesystem-dev,
+- libboost-system-dev,
++ libboost-filesystem1.65-dev,
++ libboost-system1.65-dev,
+  libglibmm-2.4-dev,
+  libgstreamer-plugins-base1.5-dev,
+  libopencv-dev,
+diff --git a/src/gst-plugins/opencvfilter/CMakeLists.txt b/src/gst-plugins/opencvfilter/CMakeLists.txt
+index e4225bd..b95de26 100644
+--- a/src/gst-plugins/opencvfilter/CMakeLists.txt
++++ b/src/gst-plugins/opencvfilter/CMakeLists.txt
+@@ -11,7 +11,7 @@ endif()
+ target_link_libraries(opencvfilter
+   ${gstreamer-1.5_LIBRARIES}
+   ${gstreamer-video-1.5_LIBRARIES}
+-  ${opencv_LIBRARIES}
++  ${OpenCV_LIBRARIES}
+   kmsfiltersimpl
+ )
+
+@@ -20,7 +20,7 @@ set_property(TARGET opencvfilter
+     ${CMAKE_CURRENT_BINARY_DIR}/../../..
+     ${CMAKE_CURRENT_SOURCE_DIR}/../../server/implementation/objects/
+     ${gstreamer-1.5_INCLUDE_DIRS}
+-    ${opencv_INCLUDE_DIRS}
++    ${OpenCV_INCLUDE_DIRS}
+     ${KMSCORE_INCLUDE_DIRS}
+ )
+
+diff --git a/src/server/CMakeLists.txt b/src/server/CMakeLists.txt
+index 21dc2d0..8c19372 100644
+--- a/src/server/CMakeLists.txt
++++ b/src/server/CMakeLists.txt
+@@ -8,8 +8,8 @@ include(CodeGenerator)
+ generate_code(
+   MODELS ${CMAKE_CURRENT_SOURCE_DIR}/interface
+   SERVER_IMPL_LIB_EXTRA_HEADERS ${KMS_FILTERS_IMPL_HEADERS}
+-  SERVER_IMPL_LIB_EXTRA_INCLUDE_DIRS ${opencv_INCLUDE_DIRS}
+-  SERVER_IMPL_LIB_EXTRA_LIBRARIES ${opencv_LIBRARIES}
++  SERVER_IMPL_LIB_EXTRA_INCLUDE_DIRS ${OpenCV_INCLUDE_DIRS}
++  SERVER_IMPL_LIB_EXTRA_LIBRARIES ${OpenCV_LIBRARIES}
+   SERVER_STUB_DESTINATION ${CMAKE_CURRENT_SOURCE_DIR}/implementation/objects
+   SERVER_IMPL_LIB_PKGCONFIG_EXTRA_REQUIRES "opencv"
+   SERVER_IMPL_LIB_FIND_CMAKE_EXTRA_LIBRARIES "opencv"
+diff --git a/src/gst-plugins/CMakeLists.txt b/src/gst-plugins/CMakeLists.txt
+index a20f861..8a9ae34 100644
+--- a/src/gst-plugins/CMakeLists.txt
++++ b/src/gst-plugins/CMakeLists.txt
+@@ -1,6 +1,6 @@
+-add_subdirectory(facedetector)
+-add_subdirectory(faceoverlay)
+-add_subdirectory(imageoverlay)
+-add_subdirectory(movementdetector)
++#add_subdirectory(facedetector)
++#add_subdirectory(faceoverlay)
++#add_subdirectory(imageoverlay)
++#add_subdirectory(movementdetector)
+ add_subdirectory(opencvfilter)
+-add_subdirectory(logooverlay)
++#add_subdirectory(logooverlay)

@@ -1,0 +1,2 @@
+deb http://ports.ubuntu.com/ubuntu-ports bionic-security main
+deb http://ports.ubuntu.com/ubuntu-ports bionic main universe

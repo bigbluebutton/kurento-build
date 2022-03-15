@@ -1,0 +1,13 @@
+version: '3.7'
+
+services:
+
+  builder:
+    build: docker
+    restart: on-failure
+    tty: true
+    volumes:
+      - ./packages:/packages
+      - ./scripts:/scripts
+      - ./patches:/patches
+      - ./kms:/kms

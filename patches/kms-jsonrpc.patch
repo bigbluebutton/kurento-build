@@ -1,0 +1,26 @@
+diff --git a/debian/control b/debian/control
+index 38a4734..84169c8 100644
+--- a/debian/control
++++ b/debian/control
+@@ -6,8 +6,8 @@ Build-Depends: debhelper (>= 9),
+  cmake,
+  kms-cmake-utils (>= 6.16.0),
+  kmsjsoncpp-dev,
+- libboost-dev,
+- libboost-test-dev,
++ libboost1.65-dev,
++ libboost-test1.65-dev,
+  pkg-config
+ Standards-Version: 4.0.0
+ Vcs-Git: https://github.com/Kurento/kms-jsonrpc.git
+@@ -28,8 +28,8 @@ Architecture: any
+ Section: libdevel
+ Depends: kms-jsonrpc (= ${binary:Version}),
+  kmsjsoncpp-dev,
+- libboost-dev,
+- libboost-test-dev
++ libboost1.65-dev,
++ libboost-test1.65-dev
+ Breaks: kms-jsonrpc-1.0-dev
+ Replaces: kms-jsonrpc-1.0-dev
+ Description: Kurento JSON-RPC library

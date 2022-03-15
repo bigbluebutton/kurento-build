@@ -1,0 +1,13 @@
+diff --git a/debian/control b/debian/control
+index f334158..4bbac60 100644
+--- a/debian/control
++++ b/debian/control
+@@ -11,7 +11,7 @@ Build-Depends: debhelper (>= 9),
+                libgstreamer1.5-dev,
+                libgupnp-igd-1.0-dev (>= 0.2.4),
+                ninja-build (>= 1.7),
+-               pkg-create-dbgsym,
++#               pkg-create-dbgsym,
+                python3-pip
+ Standards-Version: 3.9.6
+ Homepage: https://www.kurento.org/
