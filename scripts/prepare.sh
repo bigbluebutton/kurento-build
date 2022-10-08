@@ -1,6 +1,6 @@
 #!/bin/sh
 
-KURENTO_VERSION=6.16.0
+KURENTO_VERSION=6.18.0
 
 export DEBIAN_FRONTEND=noninteractive
 

@@ -21,13 +21,13 @@ index af96628..bdf856b 100644
 
  set(CMAKE_INSTALL_GST_PLUGINS_DIR ${CMAKE_INSTALL_LIBDIR}/gstreamer-1.5)
 diff --git a/debian/control b/debian/control
-index 4f818a8..67a54a2 100644
+index 9892960..3dfd17b 100644
 --- a/debian/control
 +++ b/debian/control
 @@ -10,8 +10,8 @@ Build-Depends: debhelper (>= 9),
-  kms-core-dev (>= 6.16.0),
-  kms-elements-dev (>= 6.16.0),
-  kurento-module-creator (>= 6.16.0),
+  kms-core-dev (>= 6.18.0),
+  kms-elements-dev (>= 6.18.0),
+  kurento-module-creator (>= 6.18.0),
 - libboost-filesystem-dev,
 - libboost-system-dev,
 + libboost-filesystem1.65-dev,
@@ -35,10 +35,10 @@ index 4f818a8..67a54a2 100644
   libglibmm-2.4-dev,
   libgstreamer-plugins-base1.5-dev,
   libopencv-dev,
-@@ -41,8 +41,8 @@ Depends: kms-filters (= ${binary:Version}),
-  kms-core-dev (>= 6.16.0),
-  kms-elements-dev (>= 6.16.0),
-  kurento-module-creator (>= 6.16.0),
+@@ -42,8 +42,8 @@ Depends: kms-filters (= ${binary:Version}),
+  kms-core-dev (>= 6.18.0),
+  kms-elements-dev (>= 6.18.0),
+  kurento-module-creator (>= 6.18.0),
 - libboost-filesystem-dev,
 - libboost-system-dev,
 + libboost-filesystem1.65-dev,

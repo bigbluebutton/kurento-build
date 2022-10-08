@@ -17,6 +17,10 @@ if [[ -f /patches/$NAME.patch ]]; then
   envsubst '$ARCH' </patches/$NAME.patch | patch -p1
 fi
 
+if [[ -f /patches/bbb-$NAME.patch ]]; then
+  patch -p1 < /patches/bbb-$NAME.patch
+fi
+
 source /etc/lsb-release
 PACKAGE_VERSION="$(dpkg-parsechangelog --show-field Version)"
 

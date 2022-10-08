@@ -96,38 +96,38 @@ apt-get -y install /packages/gir1.2-nice-0.1_0.1.18-*.deb /packages/gstreamer1.5
 
 apt-get -y install libcurl3-gnutls
 
-cp -R /kms/.git /build/
+cp -R /kms/.git* /build/
 build-package.sh kms-cmake-utils
-apt-get -y install /packages/kms-cmake-utils_6.16.0-*.deb
+apt-get -y install /packages/kms-cmake-utils_6.18.0-*.deb
 
 build-package.sh kurento-module-creator
-apt-get -y install /packages/kurento-module-creator_6.16.0-*.deb
+apt-get -y install /packages/kurento-module-creator_6.18.0-*.deb
 
 build-package.sh kms-jsonrpc
-apt-get -y install /packages/kms-jsonrpc{,-dev}_6.16.0-*.deb
+apt-get -y install /packages/kms-jsonrpc{,-dev}_6.18.0-*.deb
 
 build-package.sh kms-core
-apt-get -y install /packages/kms-core{,-dev}_6.16.0-*.deb
+apt-get -y install /packages/kms-core{,-dev}_6.18.0-*.deb
 
 build-package.sh kms-elements
-apt-get -y install /packages/kms-elements{,-dev}_6.16.0-*.deb
+apt-get -y install /packages/kms-elements{,-dev}_6.18.0-*.deb
 
 build-package.sh kms-filters
-apt-get -y install /packages/kms-filters{,-dev}_6.16.0-*.deb
+apt-get -y install /packages/kms-filters{,-dev}_6.18.0-*.deb
 
 apt-get -y --allow-downgrades install libwebsocketpp-dev=0.7.0\*
 build-package.sh kurento-media-server
-apt-get -y install /packages/kurento-media-server{,-dev}_6.16.0-*.deb
+apt-get -y install /packages/kurento-media-server{,-dev}_6.18.0-*.deb
 
 cd /packages
-mkdir dbg
+mkdir -p dbg
 mv *-dbg*.deb dbg/
 
-mkdir dev
+mkdir -p dev
 mv *-dev*.deb dev/
-mv kms-cmake-utils_6.16.0-*.deb dev/
+mv kms-cmake-utils_6.18.0-*.deb dev/
 
-mkdir deps
+mkdir -p deps
 cd deps
 apt-get download \
   libboost-filesystem1.65.1 \

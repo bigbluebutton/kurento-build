@@ -1,0 +1,1044 @@
+diff --git a/src/gst-plugins/commons/constants.h b/src/gst-plugins/commons/constants.h
+index b6967eb8..d3012239 100644
+--- a/src/gst-plugins/commons/constants.h
++++ b/src/gst-plugins/commons/constants.h
+@@ -23,6 +23,7 @@
+ #define SDP_MEDIA_RTCP_FB_GOOG_REMB "goog-remb"
+ #define SDP_MEDIA_RTCP_FB_PLI "pli"
+ #define SDP_MEDIA_RTCP_FB_FIR "fir"
++#define SDP_MEDIA_RTCP_FB_FIR_TMMBR "ccm fir tmmbr"
+ 
+ /* RTP Header Extensions */
+ #define RTP_HDR_EXT_ABS_SEND_TIME_URI "http://www.webrtc.org/experiments/rtp-hdrext/abs-send-time"
+diff --git a/src/gst-plugins/commons/kmsbasertpendpoint.c b/src/gst-plugins/commons/kmsbasertpendpoint.c
+index 3bf5faab..a9e8d28d 100644
+--- a/src/gst-plugins/commons/kmsbasertpendpoint.c
++++ b/src/gst-plugins/commons/kmsbasertpendpoint.c
+@@ -78,6 +78,8 @@ G_DEFINE_TYPE_WITH_CODE (KmsBaseRtpEndpoint, kms_base_rtp_endpoint,
+ #define JB_READY_VIDEO_LATENCY 500
+ #define RTCP_FB_CCM_FIR   SDP_MEDIA_RTCP_FB_CCM " " SDP_MEDIA_RTCP_FB_FIR
+ #define RTCP_FB_NACK_PLI  SDP_MEDIA_RTCP_FB_NACK " " SDP_MEDIA_RTCP_FB_PLI
++#define RTCP_FB_PLI SDP_MEDIA_RTCP_FB_PLI
++#define RTCP_FB_FIR_TMMBR SDP_MEDIA_RTCP_FB_FIR_TMMBR
+ 
+ #define DEFAULT_MIN_PORT 1024
+ #define DEFAULT_MAX_PORT G_MAXUINT16
+@@ -1592,7 +1594,7 @@ static void
+ complete_caps_with_fb (GstCaps * caps, const GstSDPMedia * media,
+     const gchar * payload)
+ {
+-  gboolean fir, pli;
++  gboolean fir, pli, fir_tmmbr;
+   guint a;
+ 
+   fir = pli = FALSE;
+@@ -1610,15 +1612,26 @@ complete_caps_with_fb (GstCaps * caps, const GstSDPMedia * media,
+       continue;
+     }
+ 
++    if (sdp_utils_rtcp_fb_attr_check_type (attr, payload, RTCP_FB_FIR_TMMBR)) {
++      fir_tmmbr = TRUE;
++      continue;
++    }
++
+     if (sdp_utils_rtcp_fb_attr_check_type (attr, payload, RTCP_FB_NACK_PLI)) {
+       pli = TRUE;
+       continue;
+     }
++
++    if (sdp_utils_rtcp_fb_attr_check_type (attr, payload, RTCP_FB_PLI)) {
++      pli = TRUE;
++      continue;
++    }
+   }
+ 
+-  if (fir) {
++  if (fir || fir_tmmbr) {
+     gst_caps_set_simple (caps, "rtcp-fb-ccm-fir", G_TYPE_BOOLEAN, fir, NULL);
+   }
++
+   if (pli) {
+     gst_caps_set_simple (caps, "rtcp-fb-nack-pli", G_TYPE_BOOLEAN, pli, NULL);
+   }
+@@ -1704,16 +1717,69 @@ end:
+ }
+ 
+ static GstCaps *
+-kms_base_rtp_endpoint_get_caps_for_pt (KmsBaseRtpEndpoint * self, guint pt)
++kms_base_rtp_endpoint_get_caps_for_pt (KmsBaseRtpEndpoint * self, guint pt,
++    guint session)
+ {
++  guint i, len;
++  gchar *str_pt = NULL;
++  GstCaps *local_caps = NULL;
++  GstCaps *caps = NULL;
++
+   KmsBaseSdpEndpoint *base_endpoint = KMS_BASE_SDP_ENDPOINT (self);
+   const GstSDPMessage *sdp =
+       kms_base_sdp_endpoint_get_first_negotiated_sdp (base_endpoint);
+-  guint i, len;
++  const GstSDPMessage *local_sdp =
++      kms_base_sdp_endpoint_get_first_local_sdp (base_endpoint);
+ 
+   if (sdp == NULL) {
+     GST_WARNING_OBJECT (self, "Negotiated session not set");
+-    return FALSE;
++    goto end;
++  }
++  // Fetch media type string to handle same PTs for different medias
++  const char *media_type_str;
++
++  switch (session) {
++    case AUDIO_RTP_SESSION:
++      media_type_str = kms_utils_media_type_to_str (KMS_MEDIA_TYPE_AUDIO);
++      break;
++    case VIDEO_RTP_SESSION:
++      media_type_str = kms_utils_media_type_to_str (KMS_MEDIA_TYPE_VIDEO);
++      break;
++    default:
++      GST_WARNING_OBJECT (self, "No media supported for session %u", session);
++      goto end;
++  }
++
++  /*
++   * We already have the first negotiated SDP (the remote one). To handle PT
++   * mismatches, we'll also get our first local SDP to fetch the media that
++   * matches the PT emitted on request-pt-map. With that media, we run a caps
++   * comparison with the first negotiated SDP to determine a match.
++   */
++  const GstSDPMedia *local_media =
++      sdp_utils_get_media_from_pt (local_sdp, pt, media_type_str);
++
++  /*
++   * Local media not found. This shouldn't happen, so early-exit and try to
++   * generate a fallback caps based on the session info.
++   */
++  if (local_media == NULL) {
++    goto end;
++  }
++
++  str_pt = g_strdup_printf ("%i", pt);
++  const gchar *local_media_str = gst_sdp_media_get_media (local_media);
++  const gchar *local_rtpmap =
++      sdp_utils_sdp_media_get_rtpmap (local_media, str_pt);
++  const gchar *local_fmtp = sdp_utils_sdp_media_get_fmtp (local_media, str_pt);
++
++  local_caps =
++      kms_base_rtp_endpoint_get_caps_from_rtpmap (local_media_str, str_pt,
++      local_rtpmap);
++
++  /* Configure local media codec with fmtp info if it is possible */
++  if (local_fmtp != NULL) {
++    complement_caps_with_fmtp_attrs (local_caps, local_fmtp);
+   }
+ 
+   len = gst_sdp_message_medias_len (sdp);
+@@ -1726,14 +1792,10 @@ kms_base_rtp_endpoint_get_caps_for_pt (KmsBaseRtpEndpoint * self, guint pt)
+ 
+     f_len = gst_sdp_media_formats_len (media);
+     for (j = 0; j < f_len; j++) {
+-      GstCaps *caps;
+       const gchar *payload = gst_sdp_media_get_format (media, j);
+ 
+-      if (atoi (payload) != pt) {
+-        continue;
+-      }
+-
+       rtpmap = sdp_utils_sdp_media_get_rtpmap (media, payload);
++
+       caps =
+           kms_base_rtp_endpoint_get_caps_from_rtpmap (media_str, payload,
+           rtpmap);
+@@ -1742,7 +1804,22 @@ kms_base_rtp_endpoint_get_caps_for_pt (KmsBaseRtpEndpoint * self, guint pt)
+         continue;
+       }
+ 
+-      /* Configure codec if it is possible */
++      /* Do an intersection to determine if we're fetching the proper PT caps
++         This is done to handle PTs mismatches between sender/receiver. With it,
++         we use codec info layed on the SDP to determine the pt-map. */
++      GstStructure *st1, *st2;
++
++      st1 = gst_caps_get_structure (caps, 0);
++      st2 = gst_caps_get_structure (local_caps, 0);
++
++      gst_structure_remove_fields (st1, "payload", NULL);
++      gst_structure_remove_fields (st2, "payload", NULL);
++
++      if (!gst_caps_can_intersect (caps, local_caps)) {
++        continue;
++      }
++
++      /* A proper PT map was found. Configure codec if it is possible */
+       fmtp = sdp_utils_sdp_media_get_fmtp (media, payload);
+ 
+       if (fmtp != NULL) {
+@@ -1751,11 +1828,19 @@ kms_base_rtp_endpoint_get_caps_for_pt (KmsBaseRtpEndpoint * self, guint pt)
+ 
+       complete_caps_with_fb (caps, media, payload);
+ 
+-      return caps;
++      goto end;
+     }
+   }
+ 
+-  return NULL;
++end:
++  if (str_pt != NULL) {
++    g_free (str_pt);
++  }
++  if (local_caps != NULL) {
++    gst_caps_unref (local_caps);
++  }
++
++  return caps;
+ }
+ 
+ static GstCaps *
+@@ -1766,8 +1851,7 @@ kms_base_rtp_endpoint_rtpbin_request_pt_map (GstElement * rtpbin, guint session,
+ 
+   GST_DEBUG_OBJECT (self, "Caps request for pt: %d", pt);
+ 
+-  /* TODO: we will need to use the session if medias share payload numbers */
+-  caps = kms_base_rtp_endpoint_get_caps_for_pt (self, pt);
++  caps = kms_base_rtp_endpoint_get_caps_for_pt (self, pt, session);
+ 
+   if (caps != NULL) {
+     KmsRtpSynchronizer *sync = NULL;
+@@ -1921,97 +2005,6 @@ kms_base_rtp_endpoint_jitterbuffer_set_latency (GstElement * jitterbuffer,
+   g_object_unref (src_pad);
+ }
+ 
+-static gboolean
+-kms_base_rtp_endpoint_sync_rtp_it (GstBuffer ** buffer, guint idx,
+-    KmsRtpSynchronizer * sync)
+-{
+-  *buffer = gst_buffer_make_writable (*buffer);
+-  kms_rtp_synchronizer_process_rtp_buffer_writable (sync, *buffer, NULL);
+-
+-  return TRUE;
+-}
+-
+-static GstPadProbeReturn
+-kms_base_rtp_endpoint_sync_rtp_probe (GstPad * pad, GstPadProbeInfo * info,
+-    KmsRtpSynchronizer * sync)
+-{
+-  if (GST_PAD_PROBE_INFO_TYPE (info) & GST_PAD_PROBE_TYPE_BUFFER) {
+-    GstBuffer *buffer = gst_pad_probe_info_get_buffer (info);
+-
+-    buffer = gst_buffer_make_writable (buffer);
+-    kms_rtp_synchronizer_process_rtp_buffer_writable (sync, buffer, NULL);
+-    GST_PAD_PROBE_INFO_DATA (info) = buffer;
+-  }
+-  else if (GST_PAD_PROBE_INFO_TYPE (info) & GST_PAD_PROBE_TYPE_BUFFER_LIST) {
+-    GstBufferList *list = gst_pad_probe_info_get_buffer_list (info);
+-
+-    list = gst_buffer_list_make_writable (list);
+-    gst_buffer_list_foreach (list,
+-        (GstBufferListFunc) kms_base_rtp_endpoint_sync_rtp_it, sync);
+-    GST_PAD_PROBE_INFO_DATA (info) = list;
+-  }
+-
+-  return GST_PAD_PROBE_OK;
+-}
+-
+-static void
+-kms_base_rtp_endpoint_jitterbuffer_monitor_rtp_out (GstElement * jitterbuffer,
+-    KmsRtpSynchronizer * sync)
+-{
+-  GstPad *src_pad;
+-
+-  GST_INFO_OBJECT (jitterbuffer, "Add probe: Adjust jitterbuffer PTS out");
+-
+-  src_pad = gst_element_get_static_pad (jitterbuffer, "src");
+-  gst_pad_add_probe (src_pad,
+-      GST_PAD_PROBE_TYPE_BUFFER | GST_PAD_PROBE_TYPE_BUFFER_LIST,
+-      (GstPadProbeCallback) kms_base_rtp_endpoint_sync_rtp_probe, sync, NULL);
+-  g_object_unref (src_pad);
+-}
+-
+-static gboolean
+-kms_base_rtp_endpoint_sync_rtcp_it (GstBuffer ** buffer, guint idx,
+-    KmsRtpSynchronizer * sync)
+-{
+-  kms_rtp_synchronizer_process_rtcp_buffer (sync, *buffer, NULL);
+-
+-  return TRUE;
+-}
+-
+-static GstPadProbeReturn
+-kms_base_rtp_endpoint_sync_rtcp_probe (GstPad * pad, GstPadProbeInfo * info,
+-    KmsRtpSynchronizer * sync)
+-{
+-  if (GST_PAD_PROBE_INFO_TYPE (info) & GST_PAD_PROBE_TYPE_BUFFER) {
+-    GstBuffer *buffer = gst_pad_probe_info_get_buffer (info);
+-
+-    kms_rtp_synchronizer_process_rtcp_buffer (sync, buffer, NULL);
+-  }
+-  else if (GST_PAD_PROBE_INFO_TYPE (info) & GST_PAD_PROBE_TYPE_BUFFER_LIST) {
+-    GstBufferList *list = gst_pad_probe_info_get_buffer_list (info);
+-
+-    gst_buffer_list_foreach (list,
+-        (GstBufferListFunc) kms_base_rtp_endpoint_sync_rtcp_it, sync);
+-  }
+-
+-  return GST_PAD_PROBE_OK;
+-}
+-
+-static void
+-kms_base_rtp_endpoint_jitterbuffer_monitor_rtcp_in (GstElement * jitterbuffer,
+-    GstPad * new_pad, KmsRtpSynchronizer * sync)
+-{
+-  if (g_strcmp0 (GST_PAD_NAME (new_pad), "sink_rtcp") != 0) {
+-    return;
+-  }
+-
+-  GST_INFO_OBJECT (jitterbuffer, "Add probe: Get jitterbuffer RTCP SR timing");
+-
+-  gst_pad_add_probe (new_pad,
+-      GST_PAD_PROBE_TYPE_BUFFER | GST_PAD_PROBE_TYPE_BUFFER_LIST,
+-      (GstPadProbeCallback) kms_base_rtp_endpoint_sync_rtcp_probe, sync, NULL);
+-}
+-
+ static void
+ kms_base_rtp_endpoint_rtpbin_new_jitterbuffer (GstElement * rtpbin,
+     GstElement * jitterbuffer,
+@@ -2021,35 +2014,19 @@ kms_base_rtp_endpoint_rtpbin_new_jitterbuffer (GstElement * rtpbin,
+   KmsSSRCStats *ssrc_stats;
+ 
+   g_object_set (jitterbuffer, "mode", 4 /* synced */, "do-lost", TRUE,
+-      "latency", JB_INITIAL_LATENCY, NULL);
++      "latency", JB_INITIAL_LATENCY, "drop-on-latency", TRUE, NULL);
+ 
+   switch (session) {
+     case AUDIO_RTP_SESSION: {
+       kms_base_rtp_endpoint_jitterbuffer_set_latency (jitterbuffer,
+           JB_READY_AUDIO_LATENCY);
+ 
+-      kms_base_rtp_endpoint_jitterbuffer_monitor_rtp_out (jitterbuffer,
+-          self->priv->sync_audio);
+-
+-      g_signal_connect (jitterbuffer, "pad-added",
+-          G_CALLBACK (kms_base_rtp_endpoint_jitterbuffer_monitor_rtcp_in),
+-          self->priv->sync_audio);
+-
+       break;
+     }
+     case VIDEO_RTP_SESSION: {
+       kms_base_rtp_endpoint_jitterbuffer_set_latency (jitterbuffer,
+           JB_READY_VIDEO_LATENCY);
+ 
+-      kms_base_rtp_endpoint_jitterbuffer_monitor_rtp_out (jitterbuffer,
+-          self->priv->sync_video);
+-
+-      if (self->priv->perform_video_sync) {
+-        g_signal_connect (jitterbuffer, "pad-added",
+-            G_CALLBACK (kms_base_rtp_endpoint_jitterbuffer_monitor_rtcp_in),
+-            self->priv->sync_video);
+-      }
+-
+       break;
+     }
+     default:
+diff --git a/src/gst-plugins/commons/kmsbasesdpendpoint.c b/src/gst-plugins/commons/kmsbasesdpendpoint.c
+index b32ff3b1..c312ca8f 100644
+--- a/src/gst-plugins/commons/kmsbasesdpendpoint.c
++++ b/src/gst-plugins/commons/kmsbasesdpendpoint.c
+@@ -96,6 +96,7 @@ struct _KmsBaseSdpEndpointPrivate
+   gint next_session_id;
+   GHashTable *sessions;
+   GstSDPMessage *first_neg_sdp;
++  GstSDPMessage *first_local_sdp;
+ 
+   gboolean bundle;
+   gboolean use_ipv6;
+@@ -583,6 +584,10 @@ kms_base_sdp_endpoint_generate_offer (KmsBaseSdpEndpoint * self,
+ 
+   offer = kms_sdp_session_generate_offer (sess);
+ 
++  if (self->priv->first_local_sdp == NULL && offer) {
++    gst_sdp_message_copy (offer, &self->priv->first_local_sdp);
++  }
++
+ end:
+   KMS_ELEMENT_UNLOCK (self);
+ 
+@@ -628,6 +633,10 @@ kms_base_sdp_endpoint_process_offer (KmsBaseSdpEndpoint * self,
+     goto end;
+   }
+ 
++  if (self->priv->first_local_sdp == NULL && answer) {
++    gst_sdp_message_copy (answer, &self->priv->first_local_sdp);
++  }
++
+   if (self->priv->first_neg_sdp == NULL && sess->neg_sdp) {
+     gst_sdp_message_copy (sess->neg_sdp, &self->priv->first_neg_sdp);
+   }
+@@ -673,6 +682,18 @@ end:
+   return ret;
+ }
+ 
++const GstSDPMessage *
++kms_base_sdp_endpoint_get_first_local_sdp (KmsBaseSdpEndpoint * self)
++{
++  const GstSDPMessage *ret;
++
++  KMS_ELEMENT_LOCK (self);
++  ret = self->priv->first_local_sdp;
++  KMS_ELEMENT_UNLOCK (self);
++
++  return ret;
++}
++
+ static GstSDPMessage *
+ kms_base_sdp_endpoint_get_local_sdp (KmsBaseSdpEndpoint * self,
+     const gchar * sess_id)
+@@ -874,6 +895,10 @@ kms_base_sdp_endpoint_finalize (GObject * object)
+     gst_sdp_message_free (self->priv->first_neg_sdp);
+   }
+ 
++  if (self->priv->first_local_sdp != NULL) {
++    gst_sdp_message_free (self->priv->first_local_sdp);
++  }
++
+   if (self->priv->audio_codecs != NULL) {
+     g_array_free (self->priv->audio_codecs, TRUE);
+   }
+diff --git a/src/gst-plugins/commons/kmsbasesdpendpoint.h b/src/gst-plugins/commons/kmsbasesdpendpoint.h
+index 613e9db2..929b1d94 100644
+--- a/src/gst-plugins/commons/kmsbasesdpendpoint.h
++++ b/src/gst-plugins/commons/kmsbasesdpendpoint.h
+@@ -88,6 +88,7 @@ GType kms_base_sdp_endpoint_get_type (void);
+ GHashTable * kms_base_sdp_endpoint_get_sessions (KmsBaseSdpEndpoint * self);
+ KmsSdpSession * kms_base_sdp_endpoint_get_session (KmsBaseSdpEndpoint * self, const gchar *sess_id);
+ const GstSDPMessage * kms_base_sdp_endpoint_get_first_negotiated_sdp (KmsBaseSdpEndpoint * self);
++const GstSDPMessage * kms_base_sdp_endpoint_get_first_local_sdp (KmsBaseSdpEndpoint * self);
+ 
+ G_END_DECLS
+ #endif /* __KMS_BASE_SDP_ENDPOINT_H__ */
+diff --git a/src/gst-plugins/commons/kmsdectreebin.c b/src/gst-plugins/commons/kmsdectreebin.c
+index 0483ecb8..d34c3d8f 100644
+--- a/src/gst-plugins/commons/kmsdectreebin.c
++++ b/src/gst-plugins/commons/kmsdectreebin.c
+@@ -45,7 +45,7 @@ create_decoder_for_caps (const GstCaps * caps, const GstCaps * raw_caps)
+   for (l = decoder_list; l != NULL; l = l->next) {
+     decoder_factory = GST_ELEMENT_FACTORY (l->data);
+ 
+-    if (g_str_has_prefix (GST_OBJECT_NAME (decoder_factory), "openh264")) {
++    if (g_str_has_prefix (GST_OBJECT_NAME (decoder_factory), "libx264")) {
+       decoder_list = g_list_remove (decoder_list, l->data);
+       decoder_list = g_list_prepend (decoder_list, decoder_factory);
+       contains_openh264 = TRUE;
+diff --git a/src/gst-plugins/commons/kmselement.c b/src/gst-plugins/commons/kmselement.c
+index 4cc83b34..ae585396 100644
+--- a/src/gst-plugins/commons/kmselement.c
++++ b/src/gst-plugins/commons/kmselement.c
+@@ -34,10 +34,13 @@
+ #define MAX_BITRATE "max-bitrate"
+ #define MIN_BITRATE "min-bitrate"
+ #define CODEC_CONFIG "codec-config"
++#define KEYFRAME_INTERVAL "keyframe-interval"
++#define DEFAULT_KEYFRAME_TIMEOUT_TAG 0
+ 
+ #define DEFAULT_MIN_OUTPUT_BITRATE 0
+ #define DEFAULT_MAX_OUTPUT_BITRATE G_MAXINT
+ #define MEDIA_FLOW_INTERNAL_TIME_MSEC 2000
++#define DEFAULT_KEYFRAME_INTERVAL 0
+ 
+ GST_DEBUG_CATEGORY_STATIC (kms_element_debug_category);
+ #define GST_CAT_DEFAULT kms_element_debug_category
+@@ -154,6 +157,8 @@ struct _KmsElementPrivate
+ 
+   GHashTable *pendingpads;
+ 
++  gint keyframe_interval;
++  gint keyframe_interval_timeout_tag;
+   gint min_output_bitrate;
+   gint max_output_bitrate;
+ 
+@@ -188,6 +193,7 @@ enum
+   PROP_MAX_OUTPUT_BITRATE,
+   PROP_MEDIA_STATS,
+   PROP_CODEC_CONFIG,
++  PROP_KEYFRAME_INTERVAL,
+   PROP_LAST
+ };
+ 
+@@ -698,6 +704,9 @@ kms_element_set_video_output_properties (KmsElement * self,
+ 
+   KMS_SET_OBJECT_PROPERTY_SAFELY (element, MIN_BITRATE,
+       self->priv->min_output_bitrate);
++
++  KMS_SET_OBJECT_PROPERTY_SAFELY (element, KEYFRAME_INTERVAL,
++      self->priv->keyframe_interval);
+ }
+ 
+ static void
+@@ -996,6 +1005,13 @@ kms_element_connect_sink_target_full (KmsElement * self, GstPad * target,
+ 
+   if (type == KMS_ELEMENT_PAD_TYPE_VIDEO) {
+     kms_utils_drop_until_keyframe (pad, TRUE);
++    if (self->priv->keyframe_interval > 0) {
++      GST_INFO_OBJECT (pad, "Keyframe interval for pad is %d",
++          self->priv->keyframe_interval);
++      self->priv->keyframe_interval_timeout_tag = g_timeout_add_seconds (
++          self->priv->keyframe_interval,
++          kms_utils_force_keyframe, pad);
++    }
+     kms_utils_pad_monitor_gaps (pad);
+   }
+ 
+@@ -1231,6 +1247,18 @@ set_codec_config (gchar * id, KmsOutputElementData * odata, KmsElement * self)
+   }
+ }
+ 
++static void
++set_keyframe_interval (gchar * id, KmsOutputElementData * odata, KmsElement * self)
++{
++  if (odata->type == KMS_ELEMENT_PAD_TYPE_VIDEO) {
++    if (odata->element != NULL) {
++      KMS_SET_OBJECT_PROPERTY_SAFELY (odata->element, KEYFRAME_INTERVAL,
++          self->priv->keyframe_interval);
++      GST_INFO_OBJECT (odata->element, "Setting keyframe interval for element to %d", self->priv->keyframe_interval);
++    }
++  }
++}
++
+ static void
+ kms_element_set_property (GObject * object, guint property_id,
+     const GValue * value, GParamSpec * pspec)
+@@ -1304,6 +1332,16 @@ kms_element_set_property (GObject * object, guint property_id,
+       KMS_ELEMENT_UNLOCK (self);
+       break;
+     }
++    case PROP_KEYFRAME_INTERVAL:{
++      gint v = g_value_get_int (value);
++
++      KMS_ELEMENT_LOCK (self);
++      self->priv->keyframe_interval = v;
++      g_hash_table_foreach (self->priv->output_elements,
++          (GHFunc) set_keyframe_interval, self);
++      KMS_ELEMENT_UNLOCK (self);
++      break;
++    }
+     default:
+       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
+       break;
+@@ -1348,6 +1386,11 @@ kms_element_get_property (GObject * object, guint property_id,
+       g_value_set_boxed (value, self->priv->codec_config);
+       KMS_ELEMENT_UNLOCK (self);
+       break;
++    case PROP_KEYFRAME_INTERVAL:
++      KMS_ELEMENT_LOCK (self);
++      g_value_set_int (value, self->priv->keyframe_interval);
++      KMS_ELEMENT_UNLOCK (self);
++      break;
+     default:
+       G_OBJECT_WARN_INVALID_PROPERTY_ID (object, property_id, pspec);
+       break;
+@@ -1374,6 +1417,9 @@ kms_element_finalize (GObject * object)
+   g_hash_table_unref (element->priv->pendingpads);
+   g_hash_table_unref (element->priv->output_elements);
+   g_hash_table_unref (element->priv->stats.avg_iss);
++  if (element->priv->keyframe_interval_timeout_tag > 0) {
++    g_source_remove (element->priv->keyframe_interval_timeout_tag);
++  }
+ 
+   g_rec_mutex_clear (&element->mutex);
+ 
+@@ -1842,6 +1888,12 @@ kms_element_class_init (KmsElementClass * klass)
+       g_param_spec_boxed ("codec-config", "codec config",
+           "Codec configuration", GST_TYPE_STRUCTURE, G_PARAM_READWRITE));
+ 
++  g_object_class_install_property (gobject_class, PROP_KEYFRAME_INTERVAL,
++      g_param_spec_int ("keyframe-interval", "Keyframe interval",
++          "Sets the keyframe intervalfor a given element", 0, G_MAXINT,
++          DEFAULT_KEYFRAME_INTERVAL, G_PARAM_READWRITE));
++
++
+   klass->sink_query = GST_DEBUG_FUNCPTR (kms_element_sink_query_default);
+   klass->collect_media_stats =
+       GST_DEBUG_FUNCPTR (kms_element_collect_media_stats_impl);
+@@ -1928,6 +1980,8 @@ kms_element_init (KmsElement * element)
+ 
+   element->priv->accept_eos = DEFAULT_ACCEPT_EOS;
+ 
++  element->priv->keyframe_interval = DEFAULT_KEYFRAME_INTERVAL;
++  element->priv->keyframe_interval_timeout_tag = DEFAULT_KEYFRAME_TIMEOUT_TAG;
+   element->priv->min_output_bitrate = DEFAULT_MIN_OUTPUT_BITRATE;
+   element->priv->max_output_bitrate = DEFAULT_MAX_OUTPUT_BITRATE;
+ 
+diff --git a/src/gst-plugins/commons/kmsenctreebin.c b/src/gst-plugins/commons/kmsenctreebin.c
+index c698b334..c0aa24f2 100644
+--- a/src/gst-plugins/commons/kmsenctreebin.c
++++ b/src/gst-plugins/commons/kmsenctreebin.c
+@@ -106,7 +106,7 @@ set_encoder_configuration (GstElement * encoder, GstStructure * codec_config,
+       const gchar *name = g_param_spec_get_name (props[i]);
+ 
+       if (gst_structure_has_field (config, name)) {
+-        GValue final_value = G_VALUE_INIT;
++        GValue final_value = { 0, };
+         gchar *st_value;
+         const GValue *val;
+ 
+@@ -158,10 +158,11 @@ configure_encoder (GstElement * encoder, EncoderType type, gint target_bitrate,
+     {
+       /* *INDENT-OFF* */
+       g_object_set (G_OBJECT (encoder),
+-                    "speed-preset", /* veryfast */ 3,
++                    "speed-preset", /* superfast */ 2,
+                     "threads", (guint) 1,
+                     "bitrate", target_bitrate / 1000,
+-                    "key-int-max", 60,
++                    "key-int-max", 30,
++                    "option-string", "slice-max-size=1024",
+                     "tune", /* zero-latency */ 4,
+                     NULL);
+       /* *INDENT-ON* */
+@@ -171,6 +172,7 @@ configure_encoder (GstElement * encoder, EncoderType type, gint target_bitrate,
+     {
+       /* *INDENT-OFF* */
+       g_object_set (G_OBJECT (encoder),
++                    "gop-size", 60,
+                     "rate-control", /* bitrate */ 1,
+                     "bitrate", target_bitrate,
+                     NULL);
+@@ -229,7 +231,7 @@ kms_enc_tree_bin_create_encoder_for_caps (KmsEncTreeBin * self,
+   for (l = encoder_list; l != NULL; l = l->next) {
+     encoder_factory = GST_ELEMENT_FACTORY (l->data);
+ 
+-    if (g_str_has_prefix (GST_OBJECT_NAME (encoder_factory), "openh264")) {
++    if (g_str_has_prefix (GST_OBJECT_NAME (encoder_factory), "libx264")) {
+       encoder_list = g_list_remove (encoder_list, l->data);
+       encoder_list = g_list_prepend (encoder_list, encoder_factory);
+       break;
+diff --git a/src/gst-plugins/commons/kmsrecordingprofile.c b/src/gst-plugins/commons/kmsrecordingprofile.c
+index c4163110..17891542 100644
+--- a/src/gst-plugins/commons/kmsrecordingprofile.c
++++ b/src/gst-plugins/commons/kmsrecordingprofile.c
+@@ -100,7 +100,7 @@ kms_recording_profile_create_mp4_profile (gboolean has_audio,
+   gst_caps_unref (pc);
+ 
+   if (has_audio) {
+-    GstCaps *ac = gst_caps_from_string ("audio/mpeg,mpegversion=1,layer=3");
++    GstCaps *ac = gst_caps_from_string ("audio/mpeg, mpegversion=4");
+ 
+     gst_encoding_container_profile_add_profile (cprof, (GstEncodingProfile *)
+         gst_encoding_audio_profile_new (ac, NULL, NULL, 0));
+diff --git a/src/gst-plugins/commons/kmsutils.c b/src/gst-plugins/commons/kmsutils.c
+index 1e53cceb..085d1e7c 100644
+--- a/src/gst-plugins/commons/kmsutils.c
++++ b/src/gst-plugins/commons/kmsutils.c
+@@ -355,6 +355,10 @@ send_force_key_unit_event (GstPad * pad, gboolean all_headers)
+   GstEvent *event;
+   GstCaps *caps = gst_pad_get_current_caps (pad);
+ 
++  if (!GST_IS_PAD (pad)) {
++    return;
++  }
++
+   if (caps == NULL) {
+     caps = gst_pad_get_allowed_caps (pad);
+   }
+@@ -476,7 +480,7 @@ discont_detection_probe (GstPad * pad, GstPadProbeInfo * info, gpointer data)
+     if (!buffer_is_keyframe (buffer)) {
+       GST_WARNING_OBJECT (
+           pad, "DISCONTINUITY at non-keyframe; will drop until keyframe");
+-      kms_utils_drop_until_keyframe (pad, FALSE);
++      kms_utils_drop_until_keyframe (pad, TRUE);
+ 
+       // The buffer represents a stream discontinuity, so drop it here to avoid
+       // causing artifacts in the downstream decoder.
+@@ -1443,7 +1447,7 @@ kms_utils_depayloader_adjust_pts_out (AdjustPtsData * data, GstBuffer * buffer)
+       && pts_current <= data->last_pts) {
+     pts_fixed = data->last_pts + GST_MSECOND;
+ 
+-    GST_WARNING_OBJECT (data->element, "Fix PTS not strictly increasing"
++    GST_INFO_OBJECT (data->element, "Fix PTS not strictly increasing"
+         ", last: %" GST_TIME_FORMAT
+         ", current: %" GST_TIME_FORMAT
+         ", fixed = last + 1: %" GST_TIME_FORMAT,
+@@ -1497,6 +1501,19 @@ kms_utils_depayloader_pts_out_probe (GstPad * pad, GstPadProbeInfo * info,
+   return GST_PAD_PROBE_OK;
+ }
+ 
++gboolean
++kms_utils_force_keyframe (void *pad)
++{
++  if (pad != NULL &&  GST_IS_PAD (pad)) {
++    GST_INFO_OBJECT(pad, "Forcing a keyframe for media pad");
++    send_force_key_unit_event (pad, TRUE);
++    return TRUE;
++  }
++  else {
++    return FALSE;
++  }
++}
++
+ void
+ kms_utils_depayloader_monitor_pts_out (GstElement * depayloader)
+ {
+diff --git a/src/gst-plugins/commons/kmsutils.h b/src/gst-plugins/commons/kmsutils.h
+index 9cb30378..63c8cb67 100644
+--- a/src/gst-plugins/commons/kmsutils.h
++++ b/src/gst-plugins/commons/kmsutils.h
+@@ -105,6 +105,8 @@ const char * kms_utils_media_type_to_str (KmsMediaType type);
+ 
+ gchar * kms_utils_generate_fingerprint_from_pem (const gchar * pem);
+ 
++gboolean kms_utils_force_keyframe (void *pad);
++
+ /* Set event function for this pad. This function variant allows to keep */
+ /* previous callbacks enabled if chain callbacks is TRUE                 */
+ void kms_utils_set_pad_event_function_full (GstPad *pad, GstPadEventFunction event, gpointer user_data, GDestroyNotify notify, gboolean chain_callbacks);
+diff --git a/src/gst-plugins/commons/sdp_utils.c b/src/gst-plugins/commons/sdp_utils.c
+index 7e543545..a23bcddb 100644
+--- a/src/gst-plugins/commons/sdp_utils.c
++++ b/src/gst-plugins/commons/sdp_utils.c
+@@ -619,8 +619,15 @@ sdp_utils_rtcp_fb_attr_check_type (const gchar * attr,
+ {
+   gchar *aux;
+   gboolean ret;
++  /*
++    If the rtcp_fb is like "* ccm fir"
++    then just ignore the payload
++  */
++  if (attr[0] == '*')
++    aux = g_strconcat("*", " ", type, NULL);
++  else
++    aux = g_strconcat (pt, " ", type, NULL);
+ 
+-  aux = g_strconcat (pt, " ", type, NULL);
+   ret = g_strcmp0 (attr, aux) == 0;
+   g_free (aux);
+ 
+@@ -1067,6 +1074,33 @@ sdp_utils_media_is_inactive (const GstSDPMedia * media)
+       || gst_sdp_media_get_port (media) == 0;
+ }
+ 
++const GstSDPMedia *
++sdp_utils_get_media_from_pt (const GstSDPMessage * sdp, guint pt, const char *media_type) {
++  guint i, len;
++
++  len = gst_sdp_message_medias_len (sdp);
++
++  for (i = 0; i < len; i++) {
++    guint j, f_len;
++    const GstSDPMedia *media = gst_sdp_message_get_media (sdp, i);
++    const gchar *media_str = gst_sdp_media_get_media (media);
++    if (g_strcmp0 (media_str, media_type) != 0) {
++      continue;
++    }
++
++    f_len = gst_sdp_media_formats_len (media);
++    for (j = 0; j < f_len; j++) {
++      const gchar *payload = gst_sdp_media_get_format (media, j);
++
++      if (atoi (payload) == pt) {
++        return media;
++      }
++    }
++  }
++
++  return NULL;
++}
++
+ static void init_debug (void) __attribute__ ((constructor));
+ 
+ static void
+diff --git a/src/gst-plugins/commons/sdp_utils.h b/src/gst-plugins/commons/sdp_utils.h
+index f7df47e8..e8b44fcf 100644
+--- a/src/gst-plugins/commons/sdp_utils.h
++++ b/src/gst-plugins/commons/sdp_utils.h
+@@ -64,4 +64,8 @@ gint sdp_utils_get_pt_for_codec_name (const GstSDPMedia *media, const gchar *cod
+ gint sdp_utils_get_abs_send_time_id (const GstSDPMedia * media);
+ gboolean sdp_utils_media_is_inactive (const GstSDPMedia * media);
+ 
++gboolean sdp_utils_media_is_inactive (const GstSDPMedia * media);
++
++const GstSDPMedia * sdp_utils_get_media_from_pt (const GstSDPMessage * sdp, guint pt, const char * media_type);
++
+ #endif /* __SDP_H__ */
+diff --git a/src/gst-plugins/commons/sdpagent/kmssdpagent.c b/src/gst-plugins/commons/sdpagent/kmssdpagent.c
+index 1ea6b935..9f27277e 100644
+--- a/src/gst-plugins/commons/sdpagent/kmssdpagent.c
++++ b/src/gst-plugins/commons/sdpagent/kmssdpagent.c
+@@ -1817,7 +1817,9 @@ kms_sdp_agent_process_answered_description (KmsSdpAgent * agent,
+ 
+     if (item == NULL) {
+       GST_ERROR_OBJECT (agent, "No handler for media at position %u", index);
+-      g_assert_not_reached ();
++      // FIXME review this assert and decide what to do in this case
++      //g_assert_not_reached ();
++      continue;
+     }
+ 
+     handler = item->data;
+diff --git a/src/gst-plugins/commons/sdpagent/kmssdpmidext.c b/src/gst-plugins/commons/sdpagent/kmssdpmidext.c
+index a1a8db5c..99a21c1c 100644
+--- a/src/gst-plugins/commons/sdpagent/kmssdpmidext.c
++++ b/src/gst-plugins/commons/sdpagent/kmssdpmidext.c
+@@ -95,6 +95,21 @@ kms_sdp_mid_ext_add_offer_attributes (KmsISdpMediaExtension * ext,
+ 
+   return TRUE;
+ }
++static void
++kms_sdp_rtcp_ext_add_answer_attributes(const GstSDPMedia * offer, GstSDPMedia * answer)
++{
++  gchar *rtcp;
++  const gchar *RTCP_ATTR = "rtcp-fb";
++  int i = 0;
++
++  do {
++    rtcp = (gchar* )gst_sdp_media_get_attribute_val_n (offer, RTCP_ATTR, i);
++
++    if (rtcp != NULL)
++      gst_sdp_media_add_attribute (answer, RTCP_ATTR, rtcp);
++    i++;
++  } while(rtcp != NULL);
++}
+ 
+ static gboolean
+ kms_sdp_mid_ext_add_answer_attributes (KmsISdpMediaExtension * ext,
+@@ -105,6 +120,8 @@ kms_sdp_mid_ext_add_answer_attributes (KmsISdpMediaExtension * ext,
+   gboolean ret = FALSE;
+ 
+   mid = gst_sdp_media_get_attribute_val (answer, MID_ATTR);
++
++
+   if (mid != NULL) {
+     /* do not add more mid attributes */
+     GST_DEBUG_OBJECT (ext, "Mid has already set in answer");
+@@ -112,8 +129,10 @@ kms_sdp_mid_ext_add_answer_attributes (KmsISdpMediaExtension * ext,
+   }
+ 
+   mid = gst_sdp_media_get_attribute_val (offer, MID_ATTR);
++
+   if (mid == NULL) {
+     GST_WARNING_OBJECT (ext, "Remote agent does not support groups");
++    kms_sdp_rtcp_ext_add_answer_attributes(offer, answer);
+     return TRUE;
+   }
+ 
+diff --git a/src/gst-plugins/kmsagnosticbin.c b/src/gst-plugins/kmsagnosticbin.c
+index 04700bbb..58ea911d 100644
+--- a/src/gst-plugins/kmsagnosticbin.c
++++ b/src/gst-plugins/kmsagnosticbin.c
+@@ -68,6 +68,7 @@ G_DEFINE_TYPE (KmsAgnosticBin2, kms_agnostic_bin2, GST_TYPE_BIN);
+ #define TARGET_BITRATE_DEFAULT 300000
+ #define MIN_BITRATE_DEFAULT 0
+ #define MAX_BITRATE_DEFAULT G_MAXINT
++#define KEYFRAME_INTERVAL_DEFAULT 0
+ #define LEAKY_TIME 600000000    /*600 ms */
+ 
+ enum
+@@ -98,9 +99,11 @@ struct _KmsAgnosticBin2Private
+ 
+   gint max_bitrate;
+   gint min_bitrate;
++  gint keyframe_interval;
+ 
+   GstStructure *codec_config;
+   gboolean bitrate_unlimited;
++  gboolean no_keyframe_interval;
+ 
+   gboolean transcoding_emitted;
+ };
+@@ -111,6 +114,7 @@ enum
+   PROP_MIN_BITRATE,
+   PROP_MAX_BITRATE,
+   PROP_CODEC_CONFIG,
++  PROP_KEYFRAME_INTERVAL,
+   N_PROPERTIES
+ };
+ 
+@@ -494,14 +498,31 @@ check_bin (KmsTreeBin * tree_bin, const GstCaps * caps)
+   if (current_caps != NULL && gst_caps_get_size (current_caps) > 0) {
+     //TODO: Remove this when problem in negotiation with features will be
+     //resolved
++    GstCaps *temp_raw_caps = gst_caps_copy (caps);
+     GstCaps *caps_without_features = gst_caps_make_writable (current_caps);
+ 
+     gst_caps_set_features (caps_without_features, 0,
+         gst_caps_features_new_empty ());
+-    if (gst_caps_can_intersect (caps, caps_without_features)) {
++    gst_caps_set_features (temp_raw_caps, 0,
++        gst_caps_features_new_empty ());
++
++    // Remove some trailing caps fields to avoid triggering the creation of a
++    // new treebin without a proper reason
++    GstStructure *st1, *st2;
++
++    st1 = gst_caps_get_structure (caps_without_features, 0);
++    st2 = gst_caps_get_structure (temp_raw_caps, 0);
++
++    gst_structure_remove_fields (st1, "width", "height", "framerate",
++        "streamheader", "codec_data", NULL);
++    gst_structure_remove_fields (st2, "width", "height", "framerate",
++        "streamheader", "codec_data", NULL);
++
++    if (gst_caps_can_intersect (temp_raw_caps, caps_without_features)) {
+       ret = TRUE;
+     }
+     gst_caps_unref (caps_without_features);
++    gst_caps_unref (temp_raw_caps);
+   }
+ 
+   g_object_unref (tee_sink);
+@@ -844,7 +865,6 @@ kms_agnostic_bin2_process_pad (KmsAgnosticBin2 * self, GstPad * pad)
+           g_object_unref (peer);
+           return FALSE;
+         }
+-
+         remove_target_pad (pad);
+       }
+ 
+@@ -864,8 +884,10 @@ add_linked_pads (GstPad * pad, KmsAgnosticBin2 * self)
+     return;
+   }
+ 
++  KMS_AGNOSTIC_BIN2_LOCK (self);
+   remove_target_pad (pad);
+   kms_agnostic_bin2_process_pad (self, pad);
++  KMS_AGNOSTIC_BIN2_UNLOCK (self);
+ }
+ 
+ static GstPadProbeReturn
+@@ -1165,6 +1187,19 @@ kms_agnostic_bin_set_encoders_bitrate (KmsAgnosticBin2 * self)
+   }
+ }
+ 
++static void
++kms_agnostic_bin_set_keyframe_interval (KmsAgnosticBin2 * self)
++{
++  GList *bins, *l;
++
++  bins = g_hash_table_get_values (self->priv->bins);
++  for (l = bins; l != NULL; l = l->next) {
++    if (KMS_IS_ENC_TREE_BIN (l->data)) {
++      // TODO unused at the moment
++    }
++  }
++}
++
+ void
+ kms_agnostic_bin2_set_property (GObject * object, guint property_id,
+     const GValue * value, GParamSpec * pspec)
+@@ -1212,6 +1247,21 @@ kms_agnostic_bin2_set_property (GObject * object, guint property_id,
+       KMS_AGNOSTIC_BIN2_UNLOCK (self);
+       break;
+     }
++    case PROP_KEYFRAME_INTERVAL:{
++      gint v;
++
++      v = g_value_get_int (value);
++      KMS_AGNOSTIC_BIN2_LOCK (self);
++      if (v == 0) {
++        self->priv->no_keyframe_interval = TRUE;
++        v = KEYFRAME_INTERVAL_DEFAULT;
++      }
++      self->priv->keyframe_interval = v;
++      GST_DEBUG ("keyframe_interval configured %d", self->priv->keyframe_interval);
++      kms_agnostic_bin_set_keyframe_interval (self);
++      KMS_AGNOSTIC_BIN2_UNLOCK (self);
++      break;
++    }
+     case PROP_CODEC_CONFIG:
+       KMS_AGNOSTIC_BIN2_LOCK (self);
+       if (self->priv->codec_config) {
+diff --git a/src/server/implementation/objects/MediaElementImpl.cpp b/src/server/implementation/objects/MediaElementImpl.cpp
+index a35aa9de..d9a632ab 100644
+--- a/src/server/implementation/objects/MediaElementImpl.cpp
++++ b/src/server/implementation/objects/MediaElementImpl.cpp
+@@ -49,6 +49,7 @@ GST_DEBUG_CATEGORY_STATIC (GST_CAT_DEFAULT);
+ 
+ #define MIN_OUTPUT_BITRATE "min-output-bitrate"
+ #define MAX_OUTPUT_BITRATE "max-output-bitrate"
++#define KEYFRAME_INTERVAL "keyframe-interval"
+ 
+ #define TYPE_VIDEO "video_"
+ #define TYPE_AUDIO "audio_"
+@@ -1135,23 +1136,24 @@ void MediaElementImpl::disconnect (std::shared_ptr<MediaElement> sink,
+ 
+     connectionData = sinkImpl->sources.at (mediaType).at (sinkMediaDescription);
+ 
+-    if (connectionData->getSourceDescription () == sourceMediaDescription) {
+-      sinkImpl->sources.at (mediaType).erase (sinkMediaDescription);
+-    }
+-
+     for (auto conn : sinks.at (mediaType).at (sourceMediaDescription)) {
+       if (conn->getSink () == sink
+           && conn->getSinkDescription () == sinkMediaDescription) {
++        if (connectionData->getSourceDescription () == sourceMediaDescription) {
++          sinkImpl->sources.at (mediaType).erase (sinkMediaDescription);
++        }
++
+         sinks.at (mediaType).at (sourceMediaDescription).erase (conn);
++
++        GstPad *sourcePad = connectionData->getSourcePad ();
++        if (sourcePad != nullptr) {
++          g_signal_emit_by_name (getGstreamerElement (), "release-requested-pad",
++              sourcePad, &ret, NULL);
++        }
++
+         break;
+       }
+     }
+-
+-    GstPad *sourcePad = connectionData->getSourcePad ();
+-    if (sourcePad != nullptr) {
+-      g_signal_emit_by_name (getGstreamerElement (), "release-requested-pad",
+-          sourcePad, &ret, NULL);
+-    }
+   } catch (std::out_of_range &) {
+ 
+   }
+@@ -1242,6 +1244,13 @@ void MediaElementImpl::setVideoFormat (std::shared_ptr<VideoCaps> caps)
+   g_object_set (element, "video-caps", c, NULL);
+ }
+ 
++void MediaElementImpl::setKeyframeInterval (int interval)
++{
++  int intervalNew;
++  g_object_set (G_OBJECT (element), KEYFRAME_INTERVAL, interval, NULL);
++  g_object_get (element, KEYFRAME_INTERVAL, &intervalNew, NULL);
++}
++
+ std::string MediaElementImpl::getGstreamerDot (
+   std::shared_ptr<GstreamerDotDetails> details)
+ {
+diff --git a/src/server/implementation/objects/MediaElementImpl.hpp b/src/server/implementation/objects/MediaElementImpl.hpp
+index 82fbc584..8d452467 100644
+--- a/src/server/implementation/objects/MediaElementImpl.hpp
++++ b/src/server/implementation/objects/MediaElementImpl.hpp
+@@ -111,6 +111,8 @@ public:
+   void setAudioFormat (std::shared_ptr<AudioCaps> caps) override;
+   void setVideoFormat (std::shared_ptr<VideoCaps> caps) override;
+ 
++  virtual void setKeyframeInterval (int interval);
++
+   virtual void release () override;
+ 
+   virtual std::string getGstreamerDot () override;
+diff --git a/src/server/interface/core.kmd.json b/src/server/interface/core.kmd.json
+index cd3ff126..ca13b220 100644
+--- a/src/server/interface/core.kmd.json
++++ b/src/server/interface/core.kmd.json
+@@ -1229,6 +1229,17 @@ If the negotiation process is not complete, it will return NULL.
+             }
+           ]
+         },
++        {
++          "name": "setKeyframeInterval",
++          "doc": "Sets the keyframe generation interval in seconds. The generation is a gstreamer force_key_unit event, thus not guaranteed to be effective",
++          "params": [
++            {
++              "name": "interval",
++              "doc": "Seconds between each keyframe. If left to zero, won't force.",
++              "type": "int"
++            }
++          ]
++        },
+         {
+           "name": "getStats",
+           "doc": "Gets the statistics related to an endpoint. If no media type is specified, it returns statistics for all available types.",
