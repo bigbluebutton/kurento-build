@@ -2,12 +2,30 @@ version: '3.7'
 
 services:
 
-  builder:
-    build: docker
+  ubuntu:
+    build:
+      context: docker
+      dockerfile: Dockerfile.ubuntu
     restart: on-failure
     tty: true
     volumes:
-      - ./packages:/packages
+      - ./KURENTO_VERSION:/KURENTO_VERSION
+      - ./packages/ubuntu:/packages
       - ./scripts:/scripts
       - ./patches:/patches
+      - ./kms:/kms
+
+  amzn2:
+    build:
+      context: docker
+      dockerfile: Dockerfile.amzn2
+    restart: on-failure
+    tty: true
+    volumes:
+      - ./KURENTO_VERSION:/KURENTO_VERSION
+      - ./docker/rpmmacros:/root/.rpmmacros
+      - ./docker/bashrc:/root/.bashrc
+      - ./packages/amzn2:/packages
+      - ./scripts:/scripts
+      - ./rpm:/rpm
       - ./kms:/kms

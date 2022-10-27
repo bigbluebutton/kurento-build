@@ -1,11 +1,11 @@
 #!/bin/sh
 
-KURENTO_VERSION=6.18.0
+KURENTO_VERSION=$(cat KURENTO_VERSION)
 
 export DEBIAN_FRONTEND=noninteractive
 
-git clone https://github.com/Kurento/kms-omni-build.git /kms
-cd /kms
+git clone https://github.com/Kurento/kms-omni-build.git kms
+cd kms
 git submodule update --init --recursive
 git submodule update --remote
 
@@ -25,5 +25,3 @@ git clone https://github.com/Kurento/gst-libav.git
 git clone https://github.com/Kurento/openwebrtc-gst-plugins.git
 git clone https://github.com/Kurento/openh264-gst-plugin.git
 git clone https://github.com/Kurento/libnice.git
-
-mkdir -p /build
