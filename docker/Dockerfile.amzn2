@@ -1,0 +1,15 @@
+# syntax=docker/dockerfile-upstream
+FROM amazonlinux:2
+
+ENV LANG=C.UTF-8 \
+    PATH="/scripts:${PATH}"
+
+RUN <<-EOF
+  amazon-linux-extras install epel -y
+  yum update -y
+  yum install mc wget nano patch yum-utils deltarpm which rpm-build rpmdevtools git -y
+  yum groupinstall "Development Tools" -y
+EOF
+
+COPY ./rpmmacros /root/.rpmmacros
+COPY ./bashrc /root/.bashrc

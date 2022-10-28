@@ -2,6 +2,8 @@
 
 set -e
 
+export KURENTO_VERSION=$(cat /KURENTO_VERSION)
+
 export DEBIAN_FRONTEND=noninteractive
 export ARCH=$(arch)
 
@@ -46,88 +48,88 @@ fi
 
 cd /kms
 
-build-package.sh openh264
+build-deb.sh openh264
 apt-get -y install /packages/openh264_1.5.0-*.deb
 
-build-package.sh jsoncpp
+build-deb.sh jsoncpp
 apt-get -y install /packages/kmsjsoncpp{,-dev}_1.6.3-*.deb
 
-build-package.sh libusrsctp
+build-deb.sh libusrsctp
 apt-get -y install /packages/libusrsctp{,-dev}_0.9.2-*.deb
 
-build-package.sh gstreamer
+build-deb.sh gstreamer
 apt-get -y install /packages/gir1.2-gstreamer-1.5_1.8.1-*.deb /packages/libgstreamer1.5-{0,dev}_1.8.1-*.deb
 
-build-package.sh gst-plugins-base
+build-deb.sh gst-plugins-base
 apt-get -y install /packages/gir1.2-gst-plugins-base-1.5_1.8.1-*.deb /packages/libgstreamer-plugins-base1.5-{0,dev}_1.8.1-*.deb \
   /packages/gstreamer1.5-plugins-base_1.8.1-*.deb \
   /packages/gstreamer1.5-{alsa,x}_1.8.1-*.deb
 
-build-package.sh gst-plugins-good
+build-deb.sh gst-plugins-good
 apt-get -y install /packages/gstreamer1.5-pulseaudio_1.8.1-*.deb /packages/gstreamer1.5-plugins-good_1.8.1-*.deb
 
-build-package.sh openh264-gst-plugin
+build-deb.sh openh264-gst-plugin
 apt-get -y install /packages/openh264-gst-plugin_1.0.0-*.deb
 
 apt-get -y remove libssl-dev
-build-package.sh libsrtp
+build-deb.sh libsrtp
 apt-get -y install /packages/libsrtp0{,-dev}_1.6.0-*.deb
 
 apt-get -y remove libcurl4-gnutls-dev
-build-package.sh gst-plugins-bad
+build-deb.sh gst-plugins-bad
 apt-get -y install /packages/gir1.2-gst-plugins-bad-1.5_1.8.1-*.deb /packages/libgstreamer-plugins-bad1.5-{0,dev}_1.8.1-*.deb \
   /packages/gstreamer1.5-plugins-bad_1.8.1-*.deb \
   /packages/openh264-gst-plugins-bad-1.5_1.8.1-*.deb
 
 apt-get -y install libx264-dev=2:0.152.\*
-build-package.sh gst-plugins-ugly
+build-deb.sh gst-plugins-ugly
 apt-get -y install /packages/gstreamer1.5-plugins-ugly_1.8.1-*.deb
 
 
-build-package.sh gst-libav
+build-deb.sh gst-libav
 apt-get -y install /packages/gstreamer1.5-libav_1.8.1-*.deb
 
-build-package.sh openwebrtc-gst-plugins
+build-deb.sh openwebrtc-gst-plugins
 apt-get -y install /packages/openwebrtc-gst-plugins{,-dev}_0.10.0-*.deb
 
-build-package.sh libnice
+build-deb.sh libnice
 apt-get -y install /packages/gir1.2-nice-0.1_0.1.18-*.deb /packages/gstreamer1.5-nice_0.1.18-*.deb \
   /packages/libnice{10,-dev}_0.1.18-*.deb
 
 apt-get -y install libcurl3-gnutls
 
-cp -R /kms/.git /build/
-build-package.sh kms-cmake-utils
-apt-get -y install /packages/kms-cmake-utils_6.16.0-*.deb
+cp -R /kms/.git* /build/
+build-deb.sh kms-cmake-utils
+apt-get -y install /packages/kms-cmake-utils_${KURENTO_VERSION}-*.deb
 
-build-package.sh kurento-module-creator
-apt-get -y install /packages/kurento-module-creator_6.16.0-*.deb
+build-deb.sh kurento-module-creator
+apt-get -y install /packages/kurento-module-creator_${KURENTO_VERSION}-*.deb
 
-build-package.sh kms-jsonrpc
-apt-get -y install /packages/kms-jsonrpc{,-dev}_6.16.0-*.deb
+build-deb.sh kms-jsonrpc
+apt-get -y install /packages/kms-jsonrpc{,-dev}_${KURENTO_VERSION}-*.deb
 
-build-package.sh kms-core
-apt-get -y install /packages/kms-core{,-dev}_6.16.0-*.deb
+build-deb.sh kms-core
+apt-get -y install /packages/kms-core{,-dev}_${KURENTO_VERSION}-*.deb
 
-build-package.sh kms-elements
-apt-get -y install /packages/kms-elements{,-dev}_6.16.0-*.deb
+build-deb.sh kms-elements
+apt-get -y install /packages/kms-elements{,-dev}_${KURENTO_VERSION}-*.deb
 
-build-package.sh kms-filters
-apt-get -y install /packages/kms-filters{,-dev}_6.16.0-*.deb
+build-deb.sh kms-filters
+apt-get -y install /packages/kms-filters{,-dev}_${KURENTO_VERSION}-*.deb
 
 apt-get -y --allow-downgrades install libwebsocketpp-dev=0.7.0\*
-build-package.sh kurento-media-server
-apt-get -y install /packages/kurento-media-server{,-dev}_6.16.0-*.deb
+build-deb.sh kurento-media-server
+apt-get -y install /packages/kurento-media-server{,-dev}_${KURENTO_VERSION}-*.deb
 
 cd /packages
-mkdir dbg
+mkdir -p dbg
 mv *-dbg*.deb dbg/
 
-mkdir dev
+mkdir -p dev
 mv *-dev*.deb dev/
-mv kms-cmake-utils_6.16.0-*.deb dev/
+mv kms-cmake-utils_${KURENTO_VERSION}-*.deb dev/
 
-mkdir deps
+mkdir -p deps
 cd deps
 apt-get download \
   libboost-filesystem1.65.1 \

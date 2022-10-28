@@ -1,0 +1,9 @@
+%_topdir      /rpm
+%_rpmdir      /packages
+%_builddir    /build
+%_buildrootdir /buildroot
+%rpmmacrodir /usr/lib/rpm/macros.d
+%dist .amzn2
+%python_provide Provides:
+%debug_package %{nil}
+%kurento_version %(cat /KURENTO_VERSION)

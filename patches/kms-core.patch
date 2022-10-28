@@ -1,11 +1,11 @@
 diff --git a/debian/control b/debian/control
-index 6ba61095..80c1f63e 100644
+index 6c51307d..e81a6cd1 100644
 --- a/debian/control
 +++ b/debian/control
 @@ -12,11 +12,11 @@ Build-Depends: debhelper (>= 9),
-  kms-cmake-utils (>= 6.16.0),
-  kms-jsonrpc-dev (>= 6.16.0),
-  kurento-module-creator (>= 6.16.0),
+  kms-cmake-utils (>= 6.18.0),
+  kms-jsonrpc-dev (>= 6.18.0),
+  kurento-module-creator (>= 6.18.0),
 - libboost-filesystem-dev,
 - libboost-regex-dev,
 - libboost-system-dev,
@@ -20,9 +20,9 @@ index 6ba61095..80c1f63e 100644
   libgstreamer-plugins-base1.5-dev,
   libgstreamer1.5-dev,
 @@ -46,11 +46,11 @@ Depends: kms-core (= ${binary:Version}),
-  kms-cmake-utils (>= 6.16.0),
-  kms-jsonrpc-dev (>= 6.16.0),
-  kurento-module-creator (>= 6.16.0),
+  kms-cmake-utils (>= 6.18.0),
+  kms-jsonrpc-dev (>= 6.18.0),
+  kurento-module-creator (>= 6.18.0),
 - libboost-filesystem-dev,
 - libboost-regex-dev,
 - libboost-system-dev,
