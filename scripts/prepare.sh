@@ -4,6 +4,9 @@ KURENTO_VERSION=$(cat KURENTO_VERSION)
 
 export DEBIAN_FRONTEND=noninteractive
 
+pushd /kms
+git rev-parse --is-inside-work-tree && exit 0 || popd
+
 git clone https://github.com/Kurento/kms-omni-build.git kms
 cd kms
 git submodule update --init --recursive

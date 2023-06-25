@@ -1,0 +1,16 @@
+# syntax=docker/dockerfile-upstream
+FROM centos:7
+
+ENV PATH="/scripts:${PATH}"
+
+RUN <<-EOF
+  yum install epel-release -y
+  yum update -y
+  yum install mc wget nano patch yum-utils deltarpm which rpm-build rpmdevtools git -y
+  yum groupinstall "Development Tools" -y
+  yum install centos-release-scl -y
+  yum install devtoolset-7-gcc-c++ -y
+EOF
+
+COPY ./rpmmacros-el7 /root/.rpmmacros
+COPY ./bashrc /root/.bashrc

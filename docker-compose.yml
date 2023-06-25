@@ -29,3 +29,18 @@ services:
       - ./scripts:/scripts
       - ./rpm:/rpm
       - ./kms:/kms
+
+  el7:
+    build:
+      context: docker
+      dockerfile: Dockerfile.el7
+    restart: on-failure
+    tty: true
+    volumes:
+      - ./KURENTO_VERSION:/KURENTO_VERSION
+      - ./docker/rpmmacros-el7:/root/.rpmmacros
+      - ./docker/bashrc:/root/.bashrc
+      - ./packages/el7:/packages
+      - ./scripts:/scripts
+      - ./rpm:/rpm
+      - ./kms:/kms

@@ -14,7 +14,7 @@ Release:        4%{?gver}%{dist}
 #Source0:	%{name}-%{version}-%{snapshot}.tar.xz
 Source0:	https://github.com/cisco/openh264/archive/v%{version}.tar.gz#/%{name}-%{version}.tar.gz
 Source1: 	%{name}-snapshot.sh
-Source2:	https://github.com/mozilla/gmp-api/archive/master.zip#/gmp-api.zip
+# Source2:	https://github.com/mozilla/gmp-api/archive/master.zip#/gmp-api.zip
 Patch:		fix_path.patch
 BuildRequires: 	nasm git unzip
 
@@ -29,14 +29,14 @@ Requires: %{name} = %{version}
 %description devel
 Header files and libraries for the package %{name}.
 
-%package     -n mozilla-openh264
-Summary:        H.264 codec support for Mozilla browsers
-Requires:       %{name}%{?_isa} = %{version}-%{release}
-Requires:       mozilla-filesystem%{?_isa}
+# %package     -n mozilla-openh264
+# Summary:        H.264 codec support for Mozilla browsers
+# Requires:       %{name}%{?_isa} = %{version}-%{release}
+# Requires:       mozilla-filesystem%{?_isa}
 
-%description -n mozilla-openh264
-The mozilla-openh264 package contains a H.264 codec plugin for Mozilla
-browsers.
+# %description -n mozilla-openh264
+# The mozilla-openh264 package contains a H.264 codec plugin for Mozilla
+# browsers.
 
 %prep
 %setup -n %{name}-%{version}
@@ -47,12 +47,12 @@ browsers.
 sed -i 's/PREFIX=\/usr\/local/PREFIX=\/usr/g' Makefile
 %endif
 
-#------------------------|
-# Api for mozilla plugin
-# Extract gmp-api archive
-unzip %{S:2}
-mv gmp-api-master gmp-api
-#------------------------|
+# #------------------------|
+# # Api for mozilla plugin
+# # Extract gmp-api archive
+# unzip %{S:2}
+# mv gmp-api-master gmp-api
+# #------------------------|
 
 %build
 
@@ -71,7 +71,7 @@ arch=i386
 make %{?_smp_mflags} ARCH=$arch
 
 # build mozilla plugin
-make plugin %{?_smp_mflags}
+#make plugin %{?_smp_mflags}
 
 %install
 %make_install 
@@ -81,21 +81,21 @@ sed -i 's|${prefix}/lib|${prefix}/lib64|g' %{buildroot}/%{_libdir}/pkgconfig/ope
 
 #--------------------------------------------|
 #Install mozilla plugin
-install -dm 755 $RPM_BUILD_ROOT%{_libdir}/mozilla/plugins/gmp-gmpopenh264/system-installed
-cp -a h264enc libgmpopenh264.so gmpopenh264.info $RPM_BUILD_ROOT%{_libdir}/mozilla/plugins/gmp-gmpopenh264/system-installed/
+# install -dm 755 $RPM_BUILD_ROOT%{_libdir}/mozilla/plugins/gmp-gmpopenh264/system-installed
+# cp -a h264enc libgmpopenh264.so gmpopenh264.info $RPM_BUILD_ROOT%{_libdir}/mozilla/plugins/gmp-gmpopenh264/system-installed/
 
-# cofiguration for mozilla plugin
-install -dm 755 $RPM_BUILD_ROOT%{_libdir}/firefox/defaults/pref
-cat > $RPM_BUILD_ROOT%{_libdir}/firefox/defaults/pref/gmpopenh264.js << EOF
-pref("media.gmp-gmpopenh264.autoupdate", false);
-pref("media.gmp-gmpopenh264.version", "system-installed");
-EOF
+# # cofiguration for mozilla plugin
+# install -dm 755 $RPM_BUILD_ROOT%{_libdir}/firefox/defaults/pref
+# cat > $RPM_BUILD_ROOT%{_libdir}/firefox/defaults/pref/gmpopenh264.js << EOF
+# pref("media.gmp-gmpopenh264.autoupdate", false);
+# pref("media.gmp-gmpopenh264.version", "system-installed");
+# EOF
 
-install -dm 755 $RPM_BUILD_ROOT%{_sysconfdir}/profile.d
-cat > $RPM_BUILD_ROOT%{_sysconfdir}/profile.d/gmpopenh264.sh << EOF
-MOZ_GMP_PATH="%{_libdir}/mozilla/plugins/gmp-gmpopenh264/system-installed"
-export MOZ_GMP_PATH
-EOF
+# install -dm 755 $RPM_BUILD_ROOT%{_sysconfdir}/profile.d
+# cat > $RPM_BUILD_ROOT%{_sysconfdir}/profile.d/gmpopenh264.sh << EOF
+# MOZ_GMP_PATH="%{_libdir}/mozilla/plugins/gmp-gmpopenh264/system-installed"
+# export MOZ_GMP_PATH
+# EOF
 #end install mozilla plugin
 #--------------------------------------------|
 
@@ -121,13 +121,13 @@ rm $RPM_BUILD_ROOT%{_libdir}/*.a
 %{_libdir}/lib%{name}.so
 %{_libdir}/pkgconfig/*.pc
 
-%files -n mozilla-openh264
-%{_sysconfdir}/profile.d/gmpopenh264.sh
-%dir %{_libdir}/firefox
-%dir %{_libdir}/firefox/defaults
-%dir %{_libdir}/firefox/defaults/pref
-%{_libdir}/firefox/defaults/pref/gmpopenh264.js
-%{_libdir}/mozilla/plugins/gmp-gmpopenh264/
+# %files -n mozilla-openh264
+# %{_sysconfdir}/profile.d/gmpopenh264.sh
+# %dir %{_libdir}/firefox
+# %dir %{_libdir}/firefox/defaults
+# %dir %{_libdir}/firefox/defaults/pref
+# %{_libdir}/firefox/defaults/pref/gmpopenh264.js
+# %{_libdir}/mozilla/plugins/gmp-gmpopenh264/
 
 %changelog
 

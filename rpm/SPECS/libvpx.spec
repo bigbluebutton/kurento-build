@@ -54,8 +54,10 @@ and decoder.
 %patch0 -p1 -b .leave-fs-on
 %patch1 -p1 -b .0001
 %patch2 -p1 -b .0002
+%if 0%{?rhel} > 7 || 0%{?amzn2}
 %patch3 -p1 -b .0003
 %patch4 -p1 -b .0004
+%endif
 
 %build
 %ifarch %{ix86}
@@ -137,7 +139,7 @@ mkdir tmp
 cd tmp
 ar x ../libvpx_g.a
 cd ..
-gcc -fPIC -shared -pthread -lm -Wl,--no-undefined -Wl,-soname,libvpx.so.%{somajor} -Wl,--version-script,%{SOURCE2} -Wl,-z,noexecstack -o libvpx.so.%{soversion} tmp/*.o
+gcc -fPIC -std=c++11 -shared -pthread -lm -Wl,--no-undefined -Wl,-soname,libvpx.so.%{somajor} -Wl,--version-script,%{SOURCE2} -Wl,-z,noexecstack -o libvpx.so.%{soversion} tmp/*.o
 rm -rf tmp
 %endif
 

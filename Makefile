@@ -4,9 +4,11 @@ target = $(word 1,$(subst ., ,$@))
 sub1 = $(word 2,$(subst ., ,$@))
 sub2 = $(word 3,$(subst ., ,$@))
 
-prepare:
+prepare: docker.amzn2 docker.el7 docker.ubuntu
 	@scripts/prepare.sh
-	@docker compose build --no-cache --progress=plain amzn2 ubuntu
+
+docker.%:
+	@docker compose build --no-cache --progress=plain $(sub1)
 
 run.%:
 	@if [ "$(shell docker compose ps $(sub1) | tail -1 | awk '{print $4}')" != "running" ]; then \
@@ -22,6 +24,12 @@ build.amzn2.deps: run.amzn2 exec.amzn2.build-amzn2-deps
 	@docker compose rm --force $(sub1)
 
 build.amzn2: run.amzn2 exec.amzn2.build-amzn2
+
+build.el7.deps: run.el7 exec.el7.build-el7-deps
+	@docker compose stop $(sub1)
+	@docker compose rm --force $(sub1)
+
+build.el7: run.el7 exec.el7.build-el7
 
 build.ubuntu: run.ubuntu exec.ubuntu.build-ubuntu
 

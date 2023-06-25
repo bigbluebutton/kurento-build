@@ -2,6 +2,8 @@
 
 set -e
 
+/opt/rh/devtoolset-7/enable
+
 cd /rpm/SPECS
 
 for spec in `ls *.spec`; do

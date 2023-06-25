@@ -1,6 +1,6 @@
 # kurento-build
 
-Build scripts to create Kurento packages for Ubuntu 20.04 and Amazon Linux 2.  
+Build scripts to create Kurento packages for Ubuntu 20.04, Amazon Linux 2, Centos/EL 7.  
 
 To build the packages, change to the `kurento-build` folder and run the following commands.
 
@@ -23,7 +23,15 @@ make build.amzn2
 make down
 ```
 
-And for both Ubuntu and Amazon:
+For Centos/EL 7:
+```
+make prepare
+make build.el7.deps
+make build.el7
+make down
+```
+
+And for Ubuntu and Amazon:
 ```
 make prepare
 make build
